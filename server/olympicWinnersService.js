@@ -1,11 +1,18 @@
-import mysql from 'mysql';
+import mysql from 'mysql2';
 
 const connection = mysql.createConnection({
     host: 'localhost',
-    user: 'reporting_app',
+    user: 'root',
     password: 'password123'
 });
-
+connection.connect(function(err) {
+  if (err) {
+    console.error('error connecting: ' + err.stack);
+    return;
+  }
+ 
+  console.log('connected as id ' + connection.threadId);
+});
 class OlympicWinnersService {
 
     getData(request, resultsCallback) {
@@ -24,16 +31,15 @@ class OlympicWinnersService {
 
         const selectSql = this.createSelectSql(request);
         const fromSql = ' FROM sample_data.olympic_winners ';
-        const whereSql = this.createWhereSql(request);
+        // const whereSql = this.createWhereSql(request);
         const limitSql = this.createLimitSql(request);
 
-        const orderBySql = this.createOrderBySql(request);
-        const groupBySql = this.createGroupBySql(request);
+        // const groupBySql = this.createGroupBySql(request);
 
-        const SQL = selectSql + fromSql + whereSql + groupBySql + orderBySql + limitSql;
+        const SQL = selectSql + fromSql + limitSql;
 
-        console.log(SQL);
-
+        console.log('SQL ==> ', SQL);
+        
         return SQL;
     }
 
@@ -42,95 +48,33 @@ class OlympicWinnersService {
         const valueCols = request.valueCols;
         const groupKeys = request.groupKeys;
 
-        if (this.isDoingGrouping(rowGroupCols, groupKeys)) {
-            const colsToSelect = [];
+        // if (this.isDoingGrouping(rowGroupCols, groupKeys)) {
+        //     const colsToSelect = [];
 
-            const rowGroupCol = rowGroupCols[groupKeys.length];
-            colsToSelect.push(rowGroupCol.field);
+        //     const rowGroupCol = rowGroupCols[groupKeys.length];
+        //     colsToSelect.push(rowGroupCol.field);
 
-            valueCols.forEach(function (valueCol) {
-                colsToSelect.push(valueCol.aggFunc + '(' + valueCol.field + ') as ' + valueCol.field);
-            });
+        //     valueCols.forEach(function (valueCol) {
+        //         colsToSelect.push(valueCol.aggFunc + '(' + valueCol.field + ') as ' + valueCol.field);
+        //     });
 
-            return ' select ' + colsToSelect.join(', ');
-        }
+        //     return ' select ' + colsToSelect.join(', ');
+        // }
 
-        return ' select *';
+        return ' select country, sport, athlete, age';
     }
 
-    createFilterSql(key, item) {
-        switch (item.filterType) {
-            case 'text':
-                return this.createTextFilterSql(key, item);
-            case 'number':
-                return this.createNumberFilterSql(key, item);
-            default:
-                console.log('unkonwn filter type: ' + item.filterType);
-        }
-    }
-
-    createNumberFilterSql(key, item) {
-        switch (item.type) {
-            case 'equals':
-                return key + ' = ' + item.filter;
-            case 'notEqual':
-                return key + ' != ' + item.filter;
-            case 'greaterThan':
-                return key + ' > ' + item.filter;
-            case 'greaterThanOrEqual':
-                return key + ' >= ' + item.filter;
-            case 'lessThan':
-                return key + ' < ' + item.filter;
-            case 'lessThanOrEqual':
-                return key + ' <= ' + item.filter;
-            case 'inRange':
-                return '(' + key + ' >= ' + item.filter + ' and ' + key + ' <= ' + item.filterTo + ')';
-            default:
-                console.log('unknown number filter type: ' + item.type);
-                return 'true';
-        }
-    }
-
-    createTextFilterSql(key, item) {
-        switch (item.type) {
-            case 'equals':
-                return key + ' = "' + item.filter + '"';
-            case 'notEqual':
-                return key + ' != "' + item.filter + '"';
-            case 'contains':
-                return key + ' like "%' + item.filter + '%"';
-            case 'notContains':
-                return key + ' not like "%' + item.filter + '%"';
-            case 'startsWith':
-                return key + ' like "' + item.filter + '%"';
-            case 'endsWith':
-                return key + ' like "%' + item.filter + '"';
-            default:
-                console.log('unknown text filter type: ' + item.type);
-                return 'true';
-        }
-    }
 
     createWhereSql(request) {
         const rowGroupCols = request.rowGroupCols;
         const groupKeys = request.groupKeys;
-        const filterModel = request.filterModel;
 
-        const that = this;
         const whereParts = [];
 
         if (groupKeys.length > 0) {
             groupKeys.forEach(function (key, index) {
                 const colName = rowGroupCols[index].field;
                 whereParts.push(colName + ' = "' + key + '"')
-            });
-        }
-
-        if (filterModel) {
-            const keySet = Object.keys(filterModel);
-            keySet.forEach(function (key) {
-                const item = filterModel[key];
-                whereParts.push(that.createFilterSql(key, item));
             });
         }
 
@@ -144,48 +88,18 @@ class OlympicWinnersService {
     createGroupBySql(request) {
         const rowGroupCols = request.rowGroupCols;
         const groupKeys = request.groupKeys;
+        return '';
+        // if (this.isDoingGrouping(rowGroupCols, groupKeys)) {
+        //     const colsToGroupBy = [];
 
-        if (this.isDoingGrouping(rowGroupCols, groupKeys)) {
-            const colsToGroupBy = [];
+        //     const rowGroupCol = rowGroupCols[groupKeys.length];
+        //     colsToGroupBy.push(rowGroupCol.field);
 
-            const rowGroupCol = rowGroupCols[groupKeys.length];
-            colsToGroupBy.push(rowGroupCol.field);
-
-            return ' group by ' + colsToGroupBy.join(', ');
-        } else {
-            // select all columns
-            return '';
-        }
-    }
-
-    createOrderBySql(request) {
-        const rowGroupCols = request.rowGroupCols;
-        const groupKeys = request.groupKeys;
-        const sortModel = request.sortModel;
-
-        const grouping = this.isDoingGrouping(rowGroupCols, groupKeys);
-
-        const sortParts = [];
-        if (sortModel) {
-
-            const groupColIds =
-                rowGroupCols.map(groupCol => groupCol.id)
-                    .slice(0, groupKeys.length + 1);
-
-            sortModel.forEach(function (item) {
-                if (grouping && groupColIds.indexOf(item.colId) < 0) {
-                    // ignore
-                } else {
-                    sortParts.push(item.colId + ' ' + item.sort);
-                }
-            });
-        }
-
-        if (sortParts.length > 0) {
-            return ' order by ' + sortParts.join(', ');
-        } else {
-            return '';
-        }
+        //     return ' group by ' + colsToGroupBy.join(', ');
+        // } else {
+        //     // select all columns
+        //     return '';
+        // }
     }
 
     isDoingGrouping(rowGroupCols, groupKeys) {
